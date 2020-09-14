@@ -7,32 +7,6 @@ using Microsoft::WRL::Wrappers::Event;
 class MeshShaderSample : public Game
 {
 private:
-  UINT		m_FrameIndex;
-  UINT64	m_FenceValues[2];
-
-  ComPtr<ID3D12RootSignature>     m_RootSignature;
-  ComPtr<ID3D12PipelineState>     m_PipelineState;
-  ComPtr<ID3D12CommandAllocator>  m_CommandAllocator[2];
-  ComPtr<ID3D12GraphicsCommandList6>  m_CommandList;
-  ComPtr<ID3D12Fence1>  m_Fence;
-
-public:
-  MeshShaderSample(UINT width = 1280, UINT height = 720) 
-    : Game(L"MeshShaderSample", width, height)
-    , m_FrameIndex(0)
-    , m_FenceValues{}
-
-  {
-
-  }
-
-  ~MeshShaderSample()
-  {
-
-  }
-
-
-protected:
   struct Meshlet
   {
     UINT  VertsCount;
@@ -55,16 +29,42 @@ protected:
     UINT8   i3;
   };
 
- 
+  UINT		m_FrameIndex;
+  UINT64	m_FenceValues[2];
+
+  ComPtr<ID3D12RootSignature>     m_RootSignature;
+  ComPtr<ID3D12PipelineState>     m_PipelineState;
+  ComPtr<ID3D12CommandAllocator>  m_CommandAllocator[2];
+  ComPtr<ID3D12GraphicsCommandList6>  m_CommandList;
+  ComPtr<ID3D12Fence1>  m_Fence;
   ComPtr<ID3D12Resource2> m_MeshletBuffer;
   ComPtr<ID3D12Resource2> m_VertexBuffer;
   ComPtr<ID3D12Resource2> m_VertsIndices;
   ComPtr<ID3D12Resource2> m_PrimsIndices;
-  //  D3D12_GPU_DESCRIPTOR_HANDLE m_HandleMS;
+  ComPtr<ID3D12Resource>  m_Texture[2];
 
-  void InitMS()
+
+public:
+  MeshShaderSample(UINT width = 1280, UINT height = 720) 
+    : Game(L"MeshShaderSample", width, height)
+    , m_FrameIndex(0)
+    , m_FenceValues{}
+    , m_HandleCPU{}
+    , m_HandleGPU{}
+    , m_HandleIncSize(0)
   {
 
+  }
+
+  ~MeshShaderSample()
+  {
+
+  }
+
+
+protected:
+  void InitMS()
+  {
     auto& device = GetDevice();
 
     HRESULT hr(S_OK);
@@ -204,8 +204,6 @@ protected:
 
   }
 
-  ComPtr<ID3D12Resource>  m_Texture[2];
-
   void InitPS()
   {
     HRESULT hr(S_OK);
@@ -275,14 +273,7 @@ protected:
       ComPtr<ID3D10Blob> signature;
       ComPtr<ID3D10Blob> errorblob;
       hr = D3D12SerializeVersionedRootSignature(&rootDesc, &signature, &errorblob);
-      if (SUCCEEDED(hr)) {
-        auto hr = device->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&m_RootSignature));
-      }
-      else {
-        char* s = static_cast<char*>(errorblob->GetBufferPointer());
-
-        ::OutputDebugStringA(s);
-      }
+      hr = device->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&m_RootSignature));
     }
 
     ComPtr<ID3DBlob> bytecodeAS = LoadAsset(L"AmpShader.cso");
@@ -364,10 +355,11 @@ protected:
       m_CommandList->ClearRenderTargetView(handleRTV, clearColor, 0, nullptr);
       m_CommandList->ClearDepthStencilView(handleDSV, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
       {
-        // setup descriptor table #1
+        // setup descriptor table
         auto handleGPU = m_HandleGPU;
         auto handleCPU = m_HandleCPU;
 
+        // for PS
         auto handlePS = handleGPU;
         {
           for (size_t i = 0; i < 2; i++) {
@@ -379,7 +371,7 @@ protected:
             handleGPU.ptr += m_HandleIncSize;
           }
         }
-
+        // for MS
         auto handleMS = handleGPU;
         {
           //  #t0
@@ -411,9 +403,9 @@ protected:
           handleCPU.ptr += m_HandleIncSize;
           handleGPU.ptr += m_HandleIncSize;
         }
+        // for AS
         auto handleAS = handleGPU;
         {
-          //  #t0
           device->CreateShaderResourceView(
             m_MeshletBuffer.Get(),
             &DX12U_SHADER_RESOURCE_VIEW_DESC::Buffer(1, sizeof(Meshlet)),
