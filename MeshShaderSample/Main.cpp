@@ -42,6 +42,11 @@ private:
   ComPtr<ID3D12Resource2> m_VertsIndices;
   ComPtr<ID3D12Resource2> m_PrimsIndices;
   ComPtr<ID3D12Resource>  m_Texture[2];
+  ComPtr<ID3D12DescriptorHeap> m_DescHeapSRV;
+  D3D12_GPU_DESCRIPTOR_HANDLE m_HandleGPU;
+  D3D12_CPU_DESCRIPTOR_HANDLE m_HandleCPU;
+  UINT m_HandleIncSize;
+  Event m_Event;
 
 
 public:
@@ -316,12 +321,6 @@ protected:
 
     WaitForGPU();
   }
-  ComPtr<ID3D12DescriptorHeap> m_DescHeapSRV;
-  D3D12_GPU_DESCRIPTOR_HANDLE m_HandleGPU;
-  D3D12_CPU_DESCRIPTOR_HANDLE m_HandleCPU;
-  UINT m_HandleIncSize;
-
-  Event m_Event;
 
   void OnExit()
   {
