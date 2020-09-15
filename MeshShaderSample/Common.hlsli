@@ -17,10 +17,8 @@ struct PrimitiveOut
 
 struct Meshlet
 {
-  uint    VertsCount;
-  uint    VertsOffset;
-  uint    PrimsCount;
-  uint    PrimsOffset;
+  uint    VertsCountAndOffset;  // offset=24bit , count=8bit
+  uint    PrimsCountAndOffset;
 };
 
 struct Vertex

@@ -9,10 +9,10 @@ class MeshShaderSample : public Game
 private:
   struct Meshlet
   {
-    UINT  VertsCount;
-    UINT  VertsOffset;
-    UINT  PrimsCount;
-    UINT  PrimsOffset;
+    UINT  VertsCount : 8;
+    UINT  VertsOffset : 24;
+    UINT  PrimsCount : 8;
+    UINT  PrimsOffset : 24;
   };
 
   struct Vertex

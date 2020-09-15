@@ -17,17 +17,23 @@ void main(
 )
 {
   Meshlet mesh = Meshlets[0];
-  
+
+  uint primsCount = mesh.PrimsCountAndOffset & 0xFF;
+  uint vertsCount = mesh.VertsCountAndOffset & 0xFF;
+
+  uint primsOffset = (mesh.PrimsCountAndOffset >> 8) & 0xFFFFFF;
+  uint vertsOffset = (mesh.VertsCountAndOffset >> 8) & 0xFFFFFF;
+
   float3 offset = payload.Offset[gid];
 
-  SetMeshOutputCounts(mesh.VertsCount, 2 * mesh.PrimsCount);
+  SetMeshOutputCounts(vertsCount, 2 * primsCount);
 
-  if (gtid < mesh.VertsCount) {
+  if (gtid < vertsCount) {
     VertexOut vout;
     Vertex v;
 
     //  32bit index to 16bit index
-    uint index = VertsIndices[gtid / 2];
+    uint index = VertsIndices[vertsOffset + (gtid / 2)];
     index = (index >> ((gtid & 0x0001) * 16)) & 0xFFFF;
 
     v = Vertices[index];
@@ -38,8 +44,8 @@ void main(
     verts[gtid] = vout;
   }
 
-  if (gtid < mesh.PrimsCount) {
-    uint index = PrimitiveIndices[0];
+  if (gtid < primsCount) {
+    uint index = PrimitiveIndices[primsOffset + gtid];
     uint i0 = (index >> 0) & 0xFF;
     uint i1 = (index >> 8) & 0xFF;
     uint i2 = (index >> 16) & 0xFF;
