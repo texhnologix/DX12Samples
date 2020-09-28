@@ -1,3 +1,2 @@
 # Mesh Shader Sample
-Mesh Shader では Input Assemler を経由しないので三角ポリゴンで処理するよりも
-四角ポリゴンで処理したほうが良いよねってサンプルです。  
+Mesh Shader を使用した四角形ベースのメッシュ描画サンプル

@@ -1,64 +1,60 @@
 #include "Common.hlsli"
 
-StructuredBuffer<Meshlet> Meshlets          : register(t0);
-StructuredBuffer<Vertex>  Vertices          : register(t1);
-StructuredBuffer<uint>    VertsIndices      : register(t2);
-StructuredBuffer<uint>    PrimitiveIndices  : register(t3);
+
+ConstantBuffer<Constants> Globals       : register(b0);
+ConstantBuffer<MeshInfo>  MeshInfo      : register(b1); 
+StructuredBuffer<Meshlet> Meshlets      : register(t0);
+StructuredBuffer<Vertex>  Vertices      : register(t1);
+StructuredBuffer<uint>    VertexIndices : register(t2);
+StructuredBuffer<uint>    PrimitiveIndices   : register(t3);
 
 [NumThreads(128, 1, 1)]
 [OutputTopology("triangle")]
 void main(
-  uint gtid : SV_GroupThreadID,
-  uint gid : SV_GroupID,
+  in uint threadId : SV_GroupThreadID,
+  in uint groupId  : SV_GroupID,
   in  payload PayloadData payload,
-  out indices uint3 tris[256],
   out vertices VertexOut verts[128],
+  out indices uint3 tris[256],
   out primitives PrimitiveOut prims[256]
 )
 {
-  Meshlet mesh = Meshlets[0];
+  uint meshletIndex = payload.MeshletIndices[groupId];
 
-  uint primsCount = mesh.PrimsCountAndOffset & 0xFF;
-  uint vertsCount = mesh.VertsCountAndOffset & 0xFF;
+  Meshlet m = Meshlets[meshletIndex];
 
-  uint primsOffset = (mesh.PrimsCountAndOffset >> 8) & 0xFFFFFF;
-  uint vertsOffset = (mesh.VertsCountAndOffset >> 8) & 0xFFFFFF;
+  uint faceCount = m.PrimsCountAndOffset & 0xFF;
+  uint faceOffset = (m.PrimsCountAndOffset >> 8) & 0xFFFFFF;
 
-  float3 offset = payload.Offset[gid];
+  uint vertexCount = m.VertsCountAndOffset & 0xFF;
+  uint vertexOffset = (m.VertsCountAndOffset >> 8) & 0xFFFFFF;
 
-  SetMeshOutputCounts(vertsCount, 2 * primsCount);
+  SetMeshOutputCounts(vertexCount, faceCount * 2);
+  if (threadId < vertexCount) {
+    uint vindex = vertexOffset + threadId;
+    uint wordOffset = (vindex & 0x1);
+    uint byteOffset = (vindex >> 1);
 
-  if (gtid < vertsCount) {
+    uint indexPair = VertexIndices[byteOffset];
+    uint index = (indexPair >> (wordOffset << 4)) & 0xFFFF;
+
+    Vertex v = Vertices[index];
+
     VertexOut vout;
-    Vertex v;
-
-    //  32bit index to 16bit index
-    uint index = VertsIndices[vertsOffset + (gtid / 2)];
-    index = (index >> ((gtid & 0x0001) * 16)) & 0xFFFF;
-
-    v = Vertices[index];
-    v.Position *= float3(0.75f, 0.75f, 1);
-
-    vout.Position = float4(v.Position + offset, 1);
+    vout.Position = mul(float4(v.Position, 1), Globals.WorldViewProj);
     vout.UV = v.UV;
-    verts[gtid] = vout;
+    vout.MeshletIndex = uint2(threadId, groupId);
+    verts[threadId] = vout;
   }
 
-  if (gtid < primsCount) {
-    uint index = PrimitiveIndices[primsOffset + gtid];
+  if (threadId < faceCount) {
+    uint index = PrimitiveIndices[faceOffset + threadId];
     uint i0 = (index >> 0) & 0xFF;
     uint i1 = (index >> 8) & 0xFF;
     uint i2 = (index >> 16) & 0xFF;
     uint i3 = (index >> 24) & 0xFF;
 
-    tris[gtid * 2 + 0] = uint3(i0, i1, i2);
-    tris[gtid * 2 + 1] = uint3(i0, i2, i3);
-
-    PrimitiveOut pout;
-    pout.Culling = false;
-    prims[gtid * 2 + 0] = pout;
-
-    pout.Culling = false;
-    prims[gtid * 2 + 1] = pout;
+    tris[threadId * 2 + 0] = uint3(i0, i1, i2);
+    tris[threadId * 2 + 1] = uint3(i0, i2, i3);
   }
 }

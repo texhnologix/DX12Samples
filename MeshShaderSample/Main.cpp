@@ -7,6 +7,14 @@ using Microsoft::WRL::Wrappers::Event;
 class MeshShaderSample : public Game
 {
 private:
+  struct MeshHeader
+  {
+    UINT VertexCount;
+    UINT VertexIndexCount;
+    UINT FaceIndexCount;
+    UINT MeshletCount;
+  };
+
   struct Meshlet
   {
     UINT  VertsCount : 8;
@@ -21,7 +29,7 @@ private:
     XMFLOAT2  Texcoord;
   };
 
-  struct PrimIndex
+  struct FaceIndex
   {
     UINT8   i0;
     UINT8   i1;
@@ -48,6 +56,13 @@ private:
   UINT m_HandleIncSize;
   Event m_Event;
 
+  _declspec(align(256u)) struct SceneConstantBuffer
+  {
+    XMFLOAT4X4 World;
+    XMFLOAT4X4 WorldView;
+    XMFLOAT4X4 WorldViewProj;
+    uint32_t   DrawMeshlets;
+  };
 
 public:
   MeshShaderSample(UINT width = 1280, UINT height = 720) 
@@ -68,18 +83,102 @@ public:
 
 
 protected:
+  MeshHeader m_Header;
   void InitMS()
   {
+    HRESULT hr(S_OK);
+
     auto& device = GetDevice();
 
-    HRESULT hr(S_OK);
+    auto model = LoadAsset(L"monkey.bin");
+
+    BYTE* buftop = static_cast<BYTE*>(model->GetBufferPointer());
+    BYTE* bufend = buftop + model->GetBufferSize();
+    BYTE* bufpos = buftop;
+    auto pHeader = reinterpret_cast<MeshHeader*>(bufpos);
+    bufpos += sizeof(MeshHeader);
+    
+
+    m_Header = *pHeader;
     {
-      Meshlet meshlet = { 4, 0, 1, 0 };
+      auto vertices = reinterpret_cast<Vertex*>(bufpos);
+      auto verticesSize = (sizeof(Vertex) * pHeader->VertexCount);
 
       hr = device->CreateCommittedResource(
         &DX12U_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD),
         D3D12_HEAP_FLAG_NONE,
-        &DX12U_RESOURCE_DESC::Buffer(sizeof(meshlet)),
+        &DX12U_RESOURCE_DESC::Buffer(verticesSize),
+        D3D12_RESOURCE_STATE_GENERIC_READ,
+        nullptr,
+        IID_PPV_ARGS(&m_VertexBuffer));
+      m_VertexBuffer->SetName(L"Vertices");
+      {
+        void* pOut;
+        D3D12_RANGE readRange = {};
+        hr = m_VertexBuffer->Map(0, &readRange, &pOut);
+        ::memcpy(pOut, vertices, verticesSize);
+        D3D12_RANGE wroteRange = { 0, verticesSize };
+        m_VertexBuffer->Unmap(0, &readRange);
+      }
+      bufpos += verticesSize;
+    }
+
+    {
+      auto vertexIndices = reinterpret_cast<UINT16*>(bufpos);
+      auto vertexIndicesSize = (sizeof(UINT16) * pHeader->VertexIndexCount);
+
+      hr = device->CreateCommittedResource(
+        &DX12U_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD),
+        D3D12_HEAP_FLAG_NONE,
+        &DX12U_RESOURCE_DESC::Buffer(vertexIndicesSize),
+        D3D12_RESOURCE_STATE_GENERIC_READ,
+        nullptr,
+        IID_PPV_ARGS(&m_VertsIndices));
+      m_VertsIndices->SetName(L"VertexIndices");
+      {
+        void* pOut;
+        D3D12_RANGE readRange = {};
+        hr = m_VertsIndices->Map(0, &readRange, &pOut);
+        ::memcpy(pOut, vertexIndices, vertexIndicesSize);
+        D3D12_RANGE wroteRange = { 0, vertexIndicesSize };
+        m_VertsIndices->Unmap(0, &readRange);
+      }
+      bufpos += vertexIndicesSize;
+    }
+
+    {
+      auto faceIndices = reinterpret_cast<FaceIndex*>(bufpos);
+      auto faceIndicesSize = (sizeof(FaceIndex) * pHeader->FaceIndexCount);
+
+      hr = device->CreateCommittedResource(
+        &DX12U_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD),
+        D3D12_HEAP_FLAG_NONE,
+        &DX12U_RESOURCE_DESC::Buffer(faceIndicesSize),
+        D3D12_RESOURCE_STATE_GENERIC_READ,
+        nullptr,
+        IID_PPV_ARGS(&m_PrimsIndices));
+      m_PrimsIndices->SetName(L"FaceIndices");
+
+      {
+        void* pOut;
+        D3D12_RANGE readRange = {};
+        hr = m_PrimsIndices->Map(0, &readRange, &pOut);
+        ::memcpy(pOut, faceIndices, faceIndicesSize);
+        D3D12_RANGE wroteRange = { 0, faceIndicesSize };
+        m_PrimsIndices->Unmap(0, &readRange);
+      }
+
+      bufpos += faceIndicesSize;
+    }
+
+    {
+      auto meshlet = reinterpret_cast<Meshlet*>(bufpos);
+      auto meshletSize = (sizeof(Meshlet) * pHeader->MeshletCount);
+
+      hr = device->CreateCommittedResource(
+        &DX12U_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD),
+        D3D12_HEAP_FLAG_NONE,
+        &DX12U_RESOURCE_DESC::Buffer(meshletSize),
         D3D12_RESOURCE_STATE_GENERIC_READ,
         nullptr,
         IID_PPV_ARGS(&m_MeshletBuffer));
@@ -87,83 +186,16 @@ protected:
         void* pOut;
         D3D12_RANGE readRange = {};
         hr = m_MeshletBuffer->Map(0, &readRange, &pOut);
-        ::memcpy(pOut, &meshlet, sizeof(meshlet));
-        D3D12_RANGE wroteRange = { 0, sizeof(meshlet) };
+        ::memcpy(pOut, meshlet, meshletSize);
+        D3D12_RANGE wroteRange = { 0, meshletSize };
         m_MeshletBuffer->Unmap(0, &readRange);
       }
+
+      bufpos += meshletSize;
     }
     
-    {
-      Vertex vertices[] = {
-        { XMFLOAT3(-0.5f, +0.5f, 0.0f), XMFLOAT2(0.0f, 0.0f) },
-        { XMFLOAT3(+0.5f, +0.5f, 0.0f), XMFLOAT2(1.0f, 0.0f) },
-        { XMFLOAT3(+0.5f, -0.5f, 0.0f), XMFLOAT2(1.0f, 1.0f) },
-        { XMFLOAT3(-0.5f, -0.5f, 0.0f), XMFLOAT2(0.0f, 1.0f) },
-      };
-
-      hr = device->CreateCommittedResource(
-        &DX12U_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD),
-        D3D12_HEAP_FLAG_NONE,
-        &DX12U_RESOURCE_DESC::Buffer(sizeof(vertices)),
-        D3D12_RESOURCE_STATE_GENERIC_READ,
-        nullptr,
-        IID_PPV_ARGS(&m_VertexBuffer));
-      m_VertexBuffer->SetName(L"VB");
-      {
-        void* pOut;
-        D3D12_RANGE readRange = {};
-        hr = m_VertexBuffer->Map(0, &readRange, &pOut);
-        ::memcpy(pOut, vertices, sizeof(vertices));
-        D3D12_RANGE wroteRange = { 0, sizeof(vertices) };
-        m_VertexBuffer->Unmap(0, &readRange);
-      }
-    }
     
-    {
-      UINT16 vertexIndices[] = {
-        0,1,2,3
-      };
 
-      hr = device->CreateCommittedResource(
-        &DX12U_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD),
-        D3D12_HEAP_FLAG_NONE,
-        &DX12U_RESOURCE_DESC::Buffer(sizeof(vertexIndices)),
-        D3D12_RESOURCE_STATE_GENERIC_READ,
-        nullptr,
-        IID_PPV_ARGS(&m_VertsIndices));
-      m_VertsIndices->SetName(L"VI");
-      {
-        void* pOut;
-        D3D12_RANGE readRange = {};
-        hr = m_VertsIndices->Map(0, &readRange, &pOut);
-        ::memcpy(pOut, vertexIndices, sizeof(vertexIndices));
-        D3D12_RANGE wroteRange = { 0, sizeof(vertexIndices) };
-        m_VertsIndices->Unmap(0, &readRange);
-      }
-    }
-
-    {
-      PrimIndex primsIndices = { 0,1,2,3 };
-
-      hr = device->CreateCommittedResource(
-        &DX12U_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD),
-        D3D12_HEAP_FLAG_NONE,
-        &DX12U_RESOURCE_DESC::Buffer(sizeof(primsIndices)),
-        D3D12_RESOURCE_STATE_GENERIC_READ,
-        nullptr,
-        IID_PPV_ARGS(&m_PrimsIndices));
-      m_PrimsIndices->SetName(L"PI");
-
-      {
-        void* pOut;
-        D3D12_RANGE readRange = {};
-        hr = m_PrimsIndices->Map(0, &readRange, &pOut);
-        ::memcpy(pOut, &primsIndices, sizeof(primsIndices));
-        D3D12_RANGE wroteRange = { 0, sizeof(primsIndices) };
-        m_PrimsIndices->Unmap(0, &readRange);
-      }
-
-    }
   }
 
   void UploadTex2D(const ComPtr<ID3D12Resource>& tex2d, const void* data)
@@ -251,6 +283,11 @@ protected:
   }
 
 
+  ComPtr<ID3D12Resource> m_ConstantBuffer;
+  UINT8*  m_cbvDataBegin;
+  SceneConstantBuffer m_ConstantBufferData;
+
+  const int constantBufferSize = sizeof(SceneConstantBuffer) * 2;
 
   void OnInit()
   {
@@ -258,26 +295,40 @@ protected:
     auto& device = GetDevice();
 
     {
-      DX12U_ROOT_PARAMETER    rootParams[3];
-      DX12U_DESCRIPTOR_RANGE  descRanges[3];
-      //  for PS
-      descRanges[0] = DX12U_DESCRIPTOR_RANGE::SRV(0, 2);
-      rootParams[0] = DX12U_ROOT_PARAMETER::DescTable(1, &descRanges[0], D3D12_SHADER_VISIBILITY_PIXEL);
-      //  for MS
-      descRanges[1] = DX12U_DESCRIPTOR_RANGE::SRV(0, 4);
-      rootParams[1] = DX12U_ROOT_PARAMETER::DescTable(1, &descRanges[1], D3D12_SHADER_VISIBILITY_MESH);
+      DX12U_ROOT_PARAMETER    rootParams[5];
+
+
+      rootParams[0] = DX12U_ROOT_PARAMETER::CBV(0);
+      rootParams[1] = DX12U_ROOT_PARAMETER::Constant(1, 1);
+
       //  for AS
-      descRanges[2] = DX12U_DESCRIPTOR_RANGE::SRV(0, 1);
-      rootParams[2] = DX12U_ROOT_PARAMETER::DescTable(1, &descRanges[2], D3D12_SHADER_VISIBILITY_AMPLIFICATION);
+      DX12U_DESCRIPTOR_RANGE  descRangeAS[1];
+      descRangeAS[0] = DX12U_DESCRIPTOR_RANGE::SRV(0, 1);
+      rootParams[2] = DX12U_ROOT_PARAMETER::Table(1, &descRangeAS[0], D3D12_SHADER_VISIBILITY_AMPLIFICATION);
+
+      //  for MS
+      DX12U_DESCRIPTOR_RANGE  descRangeMS[1];
+      descRangeMS[0] = DX12U_DESCRIPTOR_RANGE::SRV(0, 4);
+      rootParams[3] = DX12U_ROOT_PARAMETER::Table(1, &descRangeMS[0], D3D12_SHADER_VISIBILITY_MESH);
+
+      //  for PS
+      DX12U_DESCRIPTOR_RANGE  descRangePS[1];
+      descRangePS[0] = DX12U_DESCRIPTOR_RANGE::SRV(0, 2);
+      rootParams[4] = DX12U_ROOT_PARAMETER::Table(1, &descRangePS[0], D3D12_SHADER_VISIBILITY_PIXEL);
 
       DX12U_STATIC_SAMPLER_DESC sampler[1];
       sampler[0] = DX12U_STATIC_SAMPLER_DESC::Default(0);
 
-      DX12U_VERSIONED_ROOT_SIGNATURE_DESC rootDesc(3, rootParams, 1, sampler);
+      DX12U_VERSIONED_ROOT_SIGNATURE_DESC rootDesc(_countof(rootParams), rootParams, _countof(sampler), sampler);
 
       ComPtr<ID3D10Blob> signature;
       ComPtr<ID3D10Blob> errorblob;
       hr = D3D12SerializeVersionedRootSignature(&rootDesc, &signature, &errorblob);
+      if (FAILED(hr))
+      {
+        const char* errmsg = static_cast<const char*>(errorblob->GetBufferPointer());
+        ::OutputDebugStringA(errmsg);
+      }
       hr = device->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&m_RootSignature));
     }
 
@@ -315,6 +366,18 @@ protected:
       m_HandleGPU = m_DescHeapSRV->GetGPUDescriptorHandleForHeapStart();
       m_HandleCPU = m_DescHeapSRV->GetCPUDescriptorHandleForHeapStart();
       m_HandleIncSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+    {
+      hr = device->CreateCommittedResource(
+        &DX12U_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD),
+        D3D12_HEAP_FLAG_NONE,
+        &DX12U_RESOURCE_DESC::Buffer(constantBufferSize),
+        D3D12_RESOURCE_STATE_GENERIC_READ,
+        nullptr,
+        IID_PPV_ARGS(&m_ConstantBuffer));
+
+      D3D12_RANGE readRange = { 0, 0 };
+      m_ConstantBuffer->Map(0, &readRange, reinterpret_cast<void**>(&m_cbvDataBegin));
+    }
 
     InitPS();
     InitMS();
@@ -326,10 +389,31 @@ protected:
   {
 
   }
+
+  float m_Angle = 0.0f;
   void OnUpdate()
   {
+    m_Angle += 0.001f;
+    XMFLOAT3 position(0.0f, 0.0f, +2.0f);
+    XMFLOAT3 lookDirection(0.0f, 0.0f, -1.0f);
+    XMFLOAT3 upDirection(0.0f, 1.0f, 0.0f);
+    XMFLOAT3 axis(0.0f, 1.0f, 0.0f);
 
+    XMMatrixLookToRH(XMLoadFloat3(&position), XMLoadFloat3(&lookDirection), XMLoadFloat3(&upDirection));
+
+    XMMATRIX world = XMMATRIX(g_XMIdentityR0, g_XMIdentityR1, g_XMIdentityR2, g_XMIdentityR3);
+    world = XMMatrixRotationAxis(XMLoadFloat3(&axis), m_Angle);
+    XMMATRIX view = XMMatrixLookToRH(XMLoadFloat3(&position), XMLoadFloat3(&lookDirection), XMLoadFloat3(&upDirection));
+    XMMATRIX proj = XMMatrixPerspectiveFovRH(XM_PI / 2.5f, 16.0f / 9.0f, 0.5f, 100.0f);
+
+    XMStoreFloat4x4(&m_ConstantBufferData.World, XMMatrixTranspose(world));
+    XMStoreFloat4x4(&m_ConstantBufferData.WorldView, XMMatrixTranspose(world * view));
+    XMStoreFloat4x4(&m_ConstantBufferData.WorldViewProj, XMMatrixTranspose(world * view * proj));
+
+    std::memcpy(m_cbvDataBegin + sizeof(SceneConstantBuffer) * m_FrameIndex, &m_ConstantBufferData, sizeof(m_ConstantBufferData));
   }
+
+
   void OnRender()
   {
     auto& device = this->GetDevice();
@@ -358,6 +442,49 @@ protected:
         auto handleGPU = m_HandleGPU;
         auto handleCPU = m_HandleCPU;
 
+        // for AS
+        auto handleAS = handleGPU;
+        {
+          device->CreateShaderResourceView(
+            m_MeshletBuffer.Get(),
+            &DX12U_SHADER_RESOURCE_VIEW_DESC::Buffer(1, sizeof(Meshlet)),
+            handleCPU);
+          handleCPU.ptr += m_HandleIncSize;
+          handleGPU.ptr += m_HandleIncSize;
+        }
+
+        // for MS
+        auto handleMS = handleGPU;
+        {
+          //  #t0
+          device->CreateShaderResourceView(
+            m_MeshletBuffer.Get(),
+            &DX12U_SHADER_RESOURCE_VIEW_DESC::Buffer(m_Header.MeshletCount, sizeof(Meshlet)),
+            handleCPU);
+          handleCPU.ptr += m_HandleIncSize;
+          handleGPU.ptr += m_HandleIncSize;
+          //  #t1
+          device->CreateShaderResourceView(
+            m_VertexBuffer.Get(),
+            &DX12U_SHADER_RESOURCE_VIEW_DESC::Buffer(m_Header.VertexCount, sizeof(Vertex)),
+            handleCPU);
+          handleCPU.ptr += m_HandleIncSize;
+          handleGPU.ptr += m_HandleIncSize;
+
+          device->CreateShaderResourceView(
+            m_VertsIndices.Get(),
+            &DX12U_SHADER_RESOURCE_VIEW_DESC::Buffer(m_Header.VertexIndexCount, sizeof(UINT16)),
+            handleCPU);
+          handleCPU.ptr += m_HandleIncSize;
+          handleGPU.ptr += m_HandleIncSize;
+
+          device->CreateShaderResourceView(
+            m_PrimsIndices.Get(),
+            &DX12U_SHADER_RESOURCE_VIEW_DESC::Buffer(m_Header.FaceIndexCount, sizeof(FaceIndex)),
+            handleCPU);
+          handleCPU.ptr += m_HandleIncSize;
+          handleGPU.ptr += m_HandleIncSize;
+        }
         // for PS
         auto handlePS = handleGPU;
         {
@@ -370,48 +497,6 @@ protected:
             handleGPU.ptr += m_HandleIncSize;
           }
         }
-        // for MS
-        auto handleMS = handleGPU;
-        {
-          //  #t0
-          device->CreateShaderResourceView(
-            m_MeshletBuffer.Get(),
-            &DX12U_SHADER_RESOURCE_VIEW_DESC::Buffer(1, sizeof(Meshlet)),
-            handleCPU);
-          handleCPU.ptr += m_HandleIncSize;
-          handleGPU.ptr += m_HandleIncSize;
-          //  #t1
-          device->CreateShaderResourceView(
-            m_VertexBuffer.Get(),
-            &DX12U_SHADER_RESOURCE_VIEW_DESC::Buffer(4, sizeof(Vertex)),
-            handleCPU);
-          handleCPU.ptr += m_HandleIncSize;
-          handleGPU.ptr += m_HandleIncSize;
-
-          device->CreateShaderResourceView(
-            m_VertsIndices.Get(),
-            &DX12U_SHADER_RESOURCE_VIEW_DESC::Buffer(4, sizeof(UINT16)),
-            handleCPU);
-          handleCPU.ptr += m_HandleIncSize;
-          handleGPU.ptr += m_HandleIncSize;
-
-          device->CreateShaderResourceView(
-            m_PrimsIndices.Get(),
-            &DX12U_SHADER_RESOURCE_VIEW_DESC::Buffer(1, sizeof(PrimIndex)),
-            handleCPU);
-          handleCPU.ptr += m_HandleIncSize;
-          handleGPU.ptr += m_HandleIncSize;
-        }
-        // for AS
-        auto handleAS = handleGPU;
-        {
-          device->CreateShaderResourceView(
-            m_MeshletBuffer.Get(),
-            &DX12U_SHADER_RESOURCE_VIEW_DESC::Buffer(1, sizeof(Meshlet)),
-            handleCPU);
-          handleCPU.ptr += m_HandleIncSize;
-          handleGPU.ptr += m_HandleIncSize;
-        }
 
         {
           m_CommandList->SetGraphicsRootSignature(m_RootSignature.Get());
@@ -419,11 +504,15 @@ protected:
           ID3D12DescriptorHeap* heaps[] = { m_DescHeapSRV.Get() };
           
           m_CommandList->SetDescriptorHeaps(_countof(heaps), heaps);
-          m_CommandList->SetGraphicsRootDescriptorTable(0, handlePS);
-          m_CommandList->SetGraphicsRootDescriptorTable(1, handleMS);
-          m_CommandList->SetGraphicsRootDescriptorTable(2, handleAS);
 
-          m_CommandList->DispatchMesh(1, 1, 1);
+          m_CommandList->SetGraphicsRootConstantBufferView(0, m_ConstantBuffer->GetGPUVirtualAddress() + sizeof(SceneConstantBuffer) * m_FrameIndex);
+          m_CommandList->SetGraphicsRootDescriptorTable(2, handleAS);
+          m_CommandList->SetGraphicsRootDescriptorTable(3, handleMS);
+          m_CommandList->SetGraphicsRootDescriptorTable(4, handlePS);
+
+          m_CommandList->SetGraphicsRoot32BitConstant(1, m_Header.MeshletCount, 0);
+          UINT numThread = (m_Header.MeshletCount + 31) / 32;
+          m_CommandList->DispatchMesh(numThread, 1, 1);
         }
       }
       m_CommandList->ResourceBarrier(1, &this->GetResourceBarrierRTV(m_FrameIndex, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT));

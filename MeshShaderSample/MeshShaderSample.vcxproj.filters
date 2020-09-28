@@ -22,6 +22,9 @@
     <Filter Include="Headers\Util">
       <UniqueIdentifier>{b86714a7-16ec-44b9-9b73-23a5bbb3e6f7}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Assets\Meshes">
+      <UniqueIdentifier>{1ea00fcc-7cb2-4fba-b332-e7f06ae738ec}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Main.cpp">
@@ -55,5 +58,8 @@
       <Filter>Assets\Shaders</Filter>
     </None>
     <None Include="README.md" />
+    <None Include="monkey.bin">
+      <Filter>Assets\Meshes</Filter>
+    </None>
   </ItemGroup>
 </Project>

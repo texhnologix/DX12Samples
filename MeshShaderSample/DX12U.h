@@ -355,7 +355,7 @@ namespace DX12U
 		DX12U_RASTERIZER_DESC()
 		{
 			FillMode = D3D12_FILL_MODE_SOLID;
-			CullMode = D3D12_CULL_MODE_BACK;
+			CullMode = D3D12_CULL_MODE_FRONT;
 			FrontCounterClockwise = FALSE;
 			DepthBias = D3D12_DEFAULT_DEPTH_BIAS;
 			DepthBiasClamp = D3D12_DEFAULT_DEPTH_BIAS_CLAMP;
@@ -517,6 +517,21 @@ namespace DX12U
 
 	struct DX12U_DESCRIPTOR_RANGE : public D3D12_DESCRIPTOR_RANGE1
 	{
+		DX12U_DESCRIPTOR_RANGE() noexcept = default;
+
+		inline static DX12U_DESCRIPTOR_RANGE CBV(UINT baseReg, UINT numRegs, UINT regSpace = 0)
+		{
+			DX12U_DESCRIPTOR_RANGE self = {};
+			self.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_CBV;
+			self.BaseShaderRegister = baseReg;
+			self.NumDescriptors = numRegs;
+			self.RegisterSpace = regSpace;
+			self.Flags = D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC;
+			self.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+			return (self);
+		}
+
 		inline static DX12U_DESCRIPTOR_RANGE SRV(UINT baseReg, UINT numRegs, UINT regSpace = 0)
 		{
 			DX12U_DESCRIPTOR_RANGE self = {};
@@ -533,11 +548,39 @@ namespace DX12U
 
 	struct DX12U_ROOT_PARAMETER : public D3D12_ROOT_PARAMETER1
 	{
-		DX12U_ROOT_PARAMETER()
-		{
+		DX12U_ROOT_PARAMETER() noexcept = default;
 
+		inline static DX12U_ROOT_PARAMETER CBV(
+			UINT baseReg, 
+			UINT regSpace = 0,
+			D3D12_SHADER_VISIBILITY shaderVisibility = D3D12_SHADER_VISIBILITY_ALL)
+		{
+			DX12U_ROOT_PARAMETER self;
+			self.ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+			self.ShaderVisibility = shaderVisibility;
+			self.Descriptor.ShaderRegister = baseReg;
+			self.Descriptor.RegisterSpace = regSpace;
+			self.Descriptor.Flags = D3D12_ROOT_DESCRIPTOR_FLAG_DATA_STATIC;
+
+			return (self);
 		}
-		inline static DX12U_ROOT_PARAMETER DescTable(
+
+		inline static DX12U_ROOT_PARAMETER Constant(
+			UINT baseReg,
+			UINT num32BitValues,
+			UINT regSpace = 0,
+			D3D12_SHADER_VISIBILITY shaderVisibility = D3D12_SHADER_VISIBILITY_ALL)
+		{
+			DX12U_ROOT_PARAMETER self;
+			self.ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
+			self.ShaderVisibility = shaderVisibility;
+			self.Constants.Num32BitValues = num32BitValues;
+			self.Constants.ShaderRegister = baseReg;
+			self.Constants.RegisterSpace = regSpace;
+			return (self);
+		}
+
+		inline static DX12U_ROOT_PARAMETER Table(
 			UINT numRange, 
 			const DX12U_DESCRIPTOR_RANGE* pRanges, 
 			D3D12_SHADER_VISIBILITY shaderVisibility = D3D12_SHADER_VISIBILITY_ALL)

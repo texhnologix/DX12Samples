@@ -1,6 +1,7 @@
 
-struct PayloadData {
-  float3 Offset[8];
+struct PayloadData 
+{
+  uint MeshletIndices[32];
 };
 
 
@@ -8,6 +9,7 @@ struct VertexOut
 {
   float4  Position : SV_Position;
   float2  UV       : TEXCOORD0;
+  uint2 MeshletIndex : COLOR0;
 };
 
 struct PrimitiveOut
@@ -27,3 +29,16 @@ struct Vertex
   float2  UV;
 };
 
+struct Constants
+{
+  float4x4 World;
+  float4x4 WorldView;
+  float4x4 WorldViewProj;
+  uint     DrawMeshlets;
+};
+
+struct MeshInfo
+{
+  uint MeshletCount;
+  uint MeshletOffset;
+};

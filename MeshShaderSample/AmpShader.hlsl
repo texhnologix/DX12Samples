@@ -1,17 +1,32 @@
 #include "Common.hlsli"
 
-groupshared PayloadData	payload;
+groupshared PayloadData	s_Payload;
 
-StructuredBuffer<Meshlet> Meshlets          : register(t0);
+ConstantBuffer<Constants> Globals			: register(b0);
+ConstantBuffer<MeshInfo>  MeshInfo		: register(b1);
+StructuredBuffer<Meshlet> Meshlets		: register(t0);
 
-[NumThreads(1, 1, 1)]
-void main(in uint gid : SV_GroupID)
+[NumThreads(32, 1, 1)]
+void main(
+	in uint threadId  : SV_GroupThreadID,
+	in uint dispathId : SV_DispatchThreadID, 
+	in uint groupId   : SV_GroupID)
 {
 
-	payload.Offset[0] = float3(-0.5f, +0.5f, 0.0f);
-	payload.Offset[1] = float3(+0.5f, +0.5f, 0.0f);
-	payload.Offset[2] = float3(-0.5f, -0.5f, 0.0f);
-	payload.Offset[3] = float3(+0.5f, -0.5f, 0.0f);
+	bool visible = false;
 
-	DispatchMesh(4, 1, 1, payload);
+	if (dispathId < MeshInfo.MeshletCount)
+	{
+		visible = true;
+	}
+
+	if (visible)
+	{
+		uint index = WavePrefixCountBits(visible);
+		s_Payload.MeshletIndices[index] = dispathId;
+	}
+
+	int visibleCount = WaveActiveCountBits(visible);
+
+	DispatchMesh(visibleCount, 1, 1, s_Payload);
 }

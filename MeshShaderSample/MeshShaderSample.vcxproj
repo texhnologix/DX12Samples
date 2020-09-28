@@ -76,6 +76,9 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="Common.hlsli" />
+    <None Include="monkey.bin">
+      <DeploymentContent>true</DeploymentContent>
+    </None>
     <None Include="README.md" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
